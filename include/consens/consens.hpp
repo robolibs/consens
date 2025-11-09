@@ -9,9 +9,13 @@
 
 namespace consens {
 
+    // Forward declare Algorithm
+    class Algorithm;
+
     /**
      * Main Consens class - one instance per agent
      * Completely independent of any simulator
+     * Uses strategy pattern - can plug in different algorithms (CBBA, etc.)
      */
     class Consens {
       public:
@@ -20,7 +24,7 @@ namespace consens {
          */
         struct Config {
             AgentID agent_id;
-            size_t max_bundle_size = 10;
+            size_t max_bundle_size = 100;
             float spatial_query_radius = 100.0f;
             bool enable_logging = true;
 
@@ -41,9 +45,15 @@ namespace consens {
         };
 
         /**
-         * Constructor
+         * Constructor - uses CBBA algorithm by default
          */
         explicit Consens(const Config &config);
+
+        /**
+         * Constructor with custom algorithm
+         * Allows plugging in different consensus algorithms
+         */
+        Consens(const Config &config, std::unique_ptr<Algorithm> algorithm);
 
         /**
          * Destructor

@@ -1,147 +1,179 @@
 #include "consens/consens.hpp"
 
+#include "consens/algorithm.hpp"
+#include "consens/cbba/cbba_algorithm.hpp"
+#include "consens/cbba/types.hpp"
+
 #include <spdlog/spdlog.h>
 
-#include <algorithm>
 #include <stdexcept>
 
 namespace consens {
 
     // ============================================================================
-    // Implementation (Pimpl pattern)
+    // Implementation (Pimpl pattern with Strategy pattern for algorithm)
     // ============================================================================
 
     class Consens::Impl {
       public:
-        explicit Impl(const Config &config) : config_(config), iteration_count_(0), converged_(false) {
+        explicit Impl(const Config &config) : config_(config) {
+            // Default: create CBBA algorithm
+            cbba::CBBAConfig cbba_config;
+            cbba_config.max_bundle_size = config.max_bundle_size;
+            cbba_config.spatial_query_radius = config.spatial_query_radius;
+
+            auto cbba_alg =
+                new cbba::CBBAAlgorithm(config.agent_id, cbba_config, config.send_message, config.receive_messages);
+            algorithm_.reset(static_cast<Algorithm *>(cbba_alg));
+
             if (config_.enable_logging) {
-                spdlog::info("[Consens] Initialized for agent: {}", config_.agent_id);
+                spdlog::info("[Consens] Initialized agent: {} with CBBA algorithm", config_.agent_id);
+            }
+        }
+
+        explicit Impl(const Config &config, std::unique_ptr<Algorithm> algorithm)
+            : config_(config), algorithm_(std::move(algorithm)) {
+            if (!algorithm_) {
+                throw std::invalid_argument("Algorithm cannot be null");
+            }
+
+            if (config_.enable_logging) {
+                spdlog::info("[Consens] Initialized agent: {} with custom algorithm", config_.agent_id);
             }
         }
 
         ~Impl() {
             if (config_.enable_logging) {
-                spdlog::info("[Consens] Destroyed for agent: {}", config_.agent_id);
+                spdlog::info("[Consens] Destroyed agent: {}", config_.agent_id);
             }
         }
 
-        // State updates
-        void update_pose(const Pose &pose) { pose_ = pose; }
+        // State updates - delegate to algorithm
+        void update_pose(const Pose &pose) {
+            if (algorithm_) {
+                algorithm_->update_pose(pose);
+            }
+        }
 
-        void update_velocity(double velocity) { velocity_ = velocity; }
+        void update_velocity(double velocity) {
+            if (algorithm_) {
+                algorithm_->update_velocity(velocity);
+            }
+        }
 
         void add_task(const Task &task) {
-            tasks_[task.get_id()] = task;
-            if (config_.enable_logging) {
-                spdlog::debug("[Consens][{}] Added task: {}", config_.agent_id, task.get_id());
+            if (algorithm_) {
+                algorithm_->add_task(task);
             }
         }
 
         void remove_task(const TaskID &id) {
-            auto it = tasks_.find(id);
-            if (it != tasks_.end()) {
-                tasks_.erase(it);
-
-                // Remove from bundle and path if present
-                auto bundle_it = std::find(bundle_.begin(), bundle_.end(), id);
-                if (bundle_it != bundle_.end()) {
-                    bundle_.erase(bundle_it);
-                }
-
-                auto path_it = std::find(path_.begin(), path_.end(), id);
-                if (path_it != path_.end()) {
-                    path_.erase(path_it);
-                }
-
-                if (config_.enable_logging) {
-                    spdlog::debug("[Consens][{}] Removed task: {}", config_.agent_id, id);
-                }
+            if (algorithm_) {
+                algorithm_->remove_task(id);
             }
         }
 
         void mark_task_completed(const TaskID &id) {
-            auto it = tasks_.find(id);
-            if (it != tasks_.end()) {
-                it->second.set_completed(true);
-
-                // Remove from bundle and path
-                remove_from_bundle(id);
-
-                if (config_.enable_logging) {
-                    spdlog::info("[Consens][{}] Marked task completed: {}", config_.agent_id, id);
-                }
+            if (algorithm_) {
+                algorithm_->mark_task_completed(id);
             }
         }
 
-        void update_neighbors(const std::vector<AgentID> &neighbor_ids) { neighbors_ = neighbor_ids; }
+        void update_neighbors(const std::vector<AgentID> &neighbor_ids) {
+            // Store for potential future use
+            neighbors_ = neighbor_ids;
+        }
 
         void tick(float dt) {
-            iteration_count_++;
-
-            if (config_.enable_logging && iteration_count_ % 10 == 0) {
-                spdlog::debug("[Consens][{}] Tick {} - {} tasks, {} in bundle", config_.agent_id, iteration_count_,
-                              tasks_.size(), bundle_.size());
+            if (algorithm_) {
+                algorithm_->tick(dt);
             }
-
-            // TODO: Implement CBBA algorithm
-            // For now, just a dummy implementation that does nothing
         }
 
-        // Query results
-        std::vector<TaskID> get_bundle() const { return bundle_; }
+        // Query results - delegate to algorithm
+        std::vector<TaskID> get_bundle() const {
+            if (algorithm_) {
+                return algorithm_->get_bundle();
+            }
+            return {};
+        }
 
-        std::vector<TaskID> get_path() const { return path_; }
+        std::vector<TaskID> get_path() const {
+            if (algorithm_) {
+                return algorithm_->get_path();
+            }
+            return {};
+        }
 
         std::optional<TaskID> get_next_task() const {
-            if (!path_.empty()) {
-                return path_[0];
+            if (algorithm_) {
+                return algorithm_->get_next_task();
             }
             return std::nullopt;
         }
 
         std::optional<Task> get_task(const TaskID &id) const {
-            auto it = tasks_.find(id);
-            if (it != tasks_.end()) {
-                return it->second;
+            if (algorithm_) {
+                return algorithm_->get_task(id);
             }
             return std::nullopt;
         }
 
         std::vector<Task> get_all_tasks() const {
-            std::vector<Task> result;
-            result.reserve(tasks_.size());
-            for (const auto &[id, task] : tasks_) {
-                result.push_back(task);
+            if (algorithm_) {
+                return algorithm_->get_all_tasks();
             }
-            return result;
+            return {};
         }
 
-        bool has_converged() const { return converged_; }
+        bool has_converged() const {
+            if (algorithm_) {
+                return algorithm_->has_converged();
+            }
+            return false;
+        }
 
         Consens::Statistics get_statistics() const {
             Statistics stats;
+
+            if (algorithm_) {
+                stats.bundle_size = algorithm_->get_bundle().size();
+                stats.total_tasks = algorithm_->get_all_tasks().size();
+                stats.total_path_score = algorithm_->get_total_score();
+                stats.converged = algorithm_->has_converged();
+            } else {
+                stats.bundle_size = 0;
+                stats.total_tasks = 0;
+                stats.total_path_score = 0.0;
+                stats.converged = false;
+            }
+
             stats.iteration_count = iteration_count_;
-            stats.bundle_size = bundle_.size();
-            stats.total_tasks = tasks_.size();
-            stats.total_path_score = 0.0; // TODO: Compute from path
-            stats.converged = converged_;
             return stats;
         }
 
         const AgentID &get_agent_id() const { return config_.agent_id; }
 
-        Pose get_pose() const { return pose_; }
+        Pose get_pose() const {
+            // Algorithm doesn't expose pose, so we'd need to track it
+            // For now return default
+            return Pose();
+        }
 
-        double get_velocity() const { return velocity_; }
+        double get_velocity() const {
+            // Algorithm doesn't expose velocity, so we'd need to track it
+            // For now return default
+            return 0.0;
+        }
 
         void reset() {
-            bundle_.clear();
-            path_.clear();
-            converged_ = false;
+            if (algorithm_) {
+                algorithm_->reset();
+            }
             iteration_count_ = 0;
 
             if (config_.enable_logging) {
-                spdlog::info("[Consens][{}] Reset", config_.agent_id);
+                spdlog::info("[Consens] Reset agent: {}", config_.agent_id);
             }
         }
 
@@ -149,32 +181,12 @@ namespace consens {
         // Configuration
         Config config_;
 
-        // Agent state
-        Pose pose_;
-        double velocity_ = 0.0;
+        // Algorithm (strategy pattern)
+        std::unique_ptr<Algorithm> algorithm_;
+
+        // State tracking
         std::vector<AgentID> neighbors_;
-
-        // Tasks
-        std::map<TaskID, Task> tasks_;
-
-        // Algorithm state
-        std::vector<TaskID> bundle_; // Unordered tasks this agent claims
-        std::vector<TaskID> path_;   // Ordered tasks to execute
-        size_t iteration_count_;
-        bool converged_;
-
-        // Helper methods
-        void remove_from_bundle(const TaskID &id) {
-            auto bundle_it = std::find(bundle_.begin(), bundle_.end(), id);
-            if (bundle_it != bundle_.end()) {
-                bundle_.erase(bundle_it);
-            }
-
-            auto path_it = std::find(path_.begin(), path_.end(), id);
-            if (path_it != path_.end()) {
-                path_.erase(path_it);
-            }
-        }
+        size_t iteration_count_ = 0;
     };
 
     // ============================================================================
@@ -182,6 +194,9 @@ namespace consens {
     // ============================================================================
 
     Consens::Consens(const Config &config) : impl_(std::make_unique<Impl>(config)) {}
+
+    Consens::Consens(const Config &config, std::unique_ptr<Algorithm> algorithm)
+        : impl_(std::make_unique<Impl>(config, std::move(algorithm))) {}
 
     Consens::~Consens() = default;
 
