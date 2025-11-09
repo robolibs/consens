@@ -1,3 +1,6 @@
 #include <spdlog/spdlog.h>
 
-int main() { spdlog::info("Hello World!"); }
+int main() {
+    spdlog::set_level(spdlog::level::trace);
+    spdlog::info("Hello World!");
+}

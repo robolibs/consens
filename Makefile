@@ -1,9 +1,15 @@
 SHELL := /bin/bash
+
+MAKEFLAGS := $(filter-out w --print-directory,$(MAKEFLAGS))
+MAKEFLAGS += --no-print-directory
+
 PROJECT_NAME := $(shell grep -Po 'set\s*\(\s*project_name\s+\K[^)]+' CMakeLists.txt)
 PROJECT_CAP  := $(shell echo $(PROJECT_NAME) | tr '[:lower:]' '[:upper:]')
 LATEST_TAG   ?= $(shell git describe --tags --abbrev=0 2>/dev/null)
 TOP_DIR      := $(CURDIR)
 BUILD_DIR    := $(TOP_DIR)/build
+
+SHELL := /bin/bash
 
 ifeq ($(PROJECT_NAME),)
 $(error Error: project_name not found in CMakeLists.txt)
@@ -19,23 +25,23 @@ $(info ------------------------------------------)
 build:
 	@if [ ! -d "$(BUILD_DIR)" ]; then \
 		echo "Build directory doesn't exist, running config first..."; \
-		$(MAKE) config; \
+		$(MAKE) reconfig; \
 	fi
-	@cd $(BUILD_DIR) && set -o pipefail && make -j 2>&1 | tee >(grep "^$(TOP_DIR)" | grep -E "error:" > "$(TOP_DIR)/.quickfix")
+	@cd $(BUILD_DIR) && set -o pipefail && make -j --no-print-directory 2>&1 | tee >(grep "^$(TOP_DIR)" | grep -E "error:" > "$(TOP_DIR)/.quickfix")
 
 b: build
 
 config:
 	@mkdir -p $(BUILD_DIR)
 	@cd $(BUILD_DIR) && if [ -f Makefile ]; then make clean; fi
-	@echo "cmake -Wno-dev -D$(PROJECT_CAP)_BUILD_EXAMPLES=ON -D$(PROJECT_CAP)_ENABLE_TESTS=ON $(if $(LOCAL),-DUSE_LOCAL=ON) .."
-	@cd $(BUILD_DIR) && cmake -Wno-dev -D$(PROJECT_CAP)_BUILD_EXAMPLES=ON -D$(PROJECT_CAP)_ENABLE_TESTS=ON $(if $(LOCAL),-DUSE_LOCAL=ON) ..
+	@echo "cmake -Wno-dev -D$(PROJECT_CAP)_BUILD_EXAMPLES=ON -D$(PROJECT_CAP)_ENABLE_TESTS=ON .."
+	@cd $(BUILD_DIR) && cmake -Wno-dev -D$(PROJECT_CAP)_BUILD_EXAMPLES=ON -D$(PROJECT_CAP)_ENABLE_TESTS=ON ..
 
 reconfig:
 	@rm -rf $(BUILD_DIR)
 	@mkdir -p $(BUILD_DIR)
-	@echo "cmake -Wno-dev -D$(PROJECT_CAP)_BUILD_EXAMPLES=ON -D$(PROJECT_CAP)_ENABLE_TESTS=ON $(if $(LOCAL),-DUSE_LOCAL=ON) .."
-	@cd $(BUILD_DIR) && cmake -Wno-dev -D$(PROJECT_CAP)_BUILD_EXAMPLES=ON -D$(PROJECT_CAP)_ENABLE_TESTS=ON $(if $(LOCAL),-DUSE_LOCAL=ON) ..
+	@echo "cmake -Wno-dev -D$(PROJECT_CAP)_BUILD_EXAMPLES=ON -D$(PROJECT_CAP)_ENABLE_TESTS=ON .."
+	@cd $(BUILD_DIR) && cmake -Wno-dev -D$(PROJECT_CAP)_BUILD_EXAMPLES=ON -D$(PROJECT_CAP)_ENABLE_TESTS=ON ..
 
 c: config
 

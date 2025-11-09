@@ -1,7 +1,8 @@
 cmake_minimum_required(VERSION 3.15)
 
-set(project_name navcon)
-project(${project_name} VERSION 0.1.4 LANGUAGES CXX)
+set(project_name consens)
+
+project(${project_name} VERSION 0.0.1 LANGUAGES CXX)
 
 add_compile_options(-Wall -Wextra -Wpedantic)
 cmake_policy(SET CMP0074 NEW)
@@ -12,6 +13,7 @@ set(CMAKE_CXX_STANDARD_REQUIRED On)
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 set(params
     -Wno-reorder
+    -Wno-unused-parameter
 )
 
 string(TOUPPER ${project_name} project_name_upper)
@@ -22,30 +24,47 @@ include(FetchContent)
 # --------------------------------------------------------------------------------------------------
 set(ext_deps)
 
-FetchContent_Declare(concord GIT_REPOSITORY https://github.com/onlyhead/concord.git GIT_TAG 2.0.2)
-FetchContent_MakeAvailable(concord)
-list(APPEND ext_deps concord::concord)
-#
-# FetchContent_Declare(geoson GIT_REPOSITORY https://github.com/smolfetch/geoson.git GIT_TAG 1.4.6)
-# FetchContent_MakeAvailable(geoson)
-# list(APPEND ext_deps geoson::geoson) 
-#
-# FetchContent_Declare(geotiv GIT_REPOSITORY https://github.com/smolfetch/geotiv.git GIT_TAG 2.0.0)
-# FetchContent_MakeAvailable(geotiv)
-# list(APPEND ext_deps geotiv::geotiv)
-#
-# FetchContent_Declare(zoneout GIT_REPOSITORY https://github.com/onlyhead/zoneout.git GIT_TAG 0.2.4)
-# FetchContent_MakeAvailable(zoneout)
-# list(APPEND ext_deps zoneout::zoneout)
- 
+
+find_package(spdlog REQUIRED)
+list(APPEND ext_deps spdlog::spdlog)
+
+# Optional dependencies via pkg-config (for MPC, etc.)
+# find_package(PkgConfig)
+# set(pkg_packs libsodium)
+# foreach(pkg IN LISTS pkg_packs)
+#     string(TOUPPER ${pkg} pkg_upper)
+#     pkg_check_modules(${pkg_upper} ${pkg})
+#     if(${pkg_upper}_FOUND)
+#         message(STATUS "Found ${pkg}: ${${pkg_upper}_LIBRARIES}")
+#         message(STATUS "  Include dirs: ${${pkg_upper}_INCLUDE_DIRS}")
+#         message(STATUS "  Library dirs: ${${pkg_upper}_LIBRARY_DIRS}")
+#         include_directories(${${pkg_upper}_INCLUDE_DIRS})
+#         link_directories(${${pkg_upper}_LIBRARY_DIRS})
+#         list(APPEND ext_deps ${${pkg_upper}_LIBRARIES})
+#     else()
+#         message(WARNING "${pkg} not found")
+#     endif()
+# endforeach()
+
 # --------------------------------------------------------------------------------------------------
-add_library(${project_name} INTERFACE)
-# Allow users to link via `${project_name}::${project_name}`
+# Build library
+file(GLOB_RECURSE SOURCES CONFIGURE_DEPENDS src/*.cpp)
+
+add_library(${project_name} ${SOURCES})
 add_library(${project_name}::${project_name} ALIAS ${project_name})
-target_include_directories(${project_name} INTERFACE
-    $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
-    $<INSTALL_INTERFACE:include>
+
+target_include_directories(${project_name} 
+    PUBLIC
+        $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
+        $<INSTALL_INTERFACE:include>
 )
+
+target_link_libraries(${project_name} PRIVATE ${ext_deps})
+
+# Export dependencies as public (headers use them)
+target_link_libraries(${project_name} PUBLIC ${ext_deps})
+
+target_compile_options(${project_name} PRIVATE ${params})
 
 install(
   DIRECTORY include/
@@ -59,8 +78,13 @@ include(GNUInstallDirs)
 #Install headers
 install(DIRECTORY include/ DESTINATION ${CMAKE_INSTALL_INCLUDEDIR})
 
-#Install and export the INTERFACE target
-install(TARGETS ${project_name} EXPORT ${project_name}Targets)
+# Install library and export targets
+install(TARGETS ${project_name} 
+    EXPORT ${project_name}Targets
+    LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}
+    ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR}
+    RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
+)
 
 #Install the export file so that `find_package(${project_name})` works
 install(EXPORT ${project_name}Targets
@@ -78,35 +102,25 @@ export(EXPORT ${project_name}Targets
 
 # --------------------------------------------------------------------------------------------------
 if(${project_name_upper}_BUILD_EXAMPLES)
-  add_definitions(-DHAS_RERUN)
-  set(RERUN_DOWNLOAD_AND_BUILD_ARROW OFF)
-  
-  option(USE_LOCAL "Use locally installed libraries instead of fetching" OFF)
-  
-  if(USE_LOCAL)
-    find_package(rerun_sdk REQUIRED PATHS $ENV{HOME}/.local/lib/cmake/rerun_sdk)
-  else()
-    FetchContent_Declare(rerun_sdk URL https://github.com/rerun-io/rerun/releases/latest/download/rerun_cpp_sdk.zip)
-    FetchContent_MakeAvailable(rerun_sdk)
-  endif()
-  list(APPEND ext_deps rerun_sdk)
-
-  FetchContent_Declare(spdlog GIT_REPOSITORY https://github.com/gabime/spdlog.git GIT_TAG v1.10.0)
-  FetchContent_MakeAvailable(spdlog)
-  
-  list(APPEND ext_deps spdlog)
-
   file(GLOB exe CONFIGURE_DEPENDS examples/*.cpp)
   # ----------------------------------------------
+  FetchContent_Declare(cli11 GIT_REPOSITORY https://github.com/CLIUtils/CLI11.git GIT_TAG v2.5.0)
+  FetchContent_MakeAvailable(cli11)
+  list(APPEND ext_deps CLI11::CLI11)
+
   set(exec_names)
   foreach(src_file IN LISTS exe)
     get_filename_component(exec_name "${src_file}" NAME_WE)
     add_executable(${exec_name} "${src_file}")
+      target_compile_options(${exec_name} PRIVATE ${params})
       foreach(lib_file IN LISTS internal_deps)
         target_compile_options(${exec_name} PRIVATE ${params})
         target_sources(${exec_name} PRIVATE "${lib_file}")
       endforeach()
+    target_compile_options(${exec_name} PRIVATE ${CURL_CFLAGS_OTHER})
     target_link_libraries(${exec_name} ${ext_deps})
+    target_link_options(${exec_name} PRIVATE ${link_options})
+    target_include_directories(${exec_name} PRIVATE ${CURL_INCLUDE_DIRS})
     install(TARGETS ${exec_name} DESTINATION bin)
     list(APPEND exec_names ${exec_name})
   endforeach()
@@ -124,7 +138,6 @@ if(${project_name_upper}_BUILD_EXAMPLES)
   )
 endif()
 
-
 # --------------------------------------------------------------------------------------------------
 if(${project_name_upper}_ENABLE_TESTS)
   enable_testing()
@@ -133,16 +146,13 @@ if(${project_name_upper}_ENABLE_TESTS)
   FetchContent_Declare(DocTest GIT_REPOSITORY "https://github.com/onqtam/doctest")
   FetchContent_MakeAvailable(DocTest)
 
-  file(GLOB test_src CONFIGURE_DEPENDS test/*.cpp)
+  file(GLOB test_src test/*.cpp)
 
   foreach(src_file IN LISTS test_src)
     get_filename_component(test_name "${src_file}" NAME_WE)
     add_executable(${test_name} "${src_file}")
-      foreach(lib_file IN LISTS internal_deps)
-        target_compile_options(${test_name} PRIVATE ${params})
-        target_sources(${test_name} PRIVATE "${lib_file}")
-      endforeach()
-    target_link_libraries(${test_name} ${ext_deps} doctest_with_main)
+    target_compile_options(${test_name} PRIVATE ${params})
+    target_link_libraries(${test_name} ${project_name}::${project_name} ${ext_deps} doctest_with_main)
     add_test(NAME ${test_name} COMMAND ${test_name})
   endforeach()
 endif()
