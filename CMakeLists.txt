@@ -24,9 +24,17 @@ include(FetchContent)
 # --------------------------------------------------------------------------------------------------
 set(ext_deps)
 
+FetchContent_Declare(concord GIT_REPOSITORY https://github.com/smolfetch/concord.git GIT_TAG 2.2.0)
+FetchContent_MakeAvailable(concord)
+list(APPEND ext_deps concord::concord)
+
+find_package(Boost REQUIRED)
+list(APPEND ext_deps Boost::boost)
+
 
 find_package(spdlog REQUIRED)
 list(APPEND ext_deps spdlog::spdlog)
+
 
 # Optional dependencies via pkg-config (for MPC, etc.)
 # find_package(PkgConfig)
@@ -106,7 +114,10 @@ if(${project_name_upper}_BUILD_EXAMPLES)
   # ----------------------------------------------
   FetchContent_Declare(cli11 GIT_REPOSITORY https://github.com/CLIUtils/CLI11.git GIT_TAG v2.5.0)
   FetchContent_MakeAvailable(cli11)
-  list(APPEND ext_deps CLI11::CLI11)
+  # Note: farmtrax is optional and only needed if examples use field generation
+  # FetchContent_Declare(farmtrax GIT_REPOSITORY https://github.com/onlyhead/farmtrax.git GIT_TAG 1.0.1)
+  # FetchContent_MakeAvailable(farmtrax)
+  # list(APPEND ext_deps farmtrax::farmtrax)
 
   set(exec_names)
   foreach(src_file IN LISTS exe)
@@ -118,7 +129,7 @@ if(${project_name_upper}_BUILD_EXAMPLES)
         target_sources(${exec_name} PRIVATE "${lib_file}")
       endforeach()
     target_compile_options(${exec_name} PRIVATE ${CURL_CFLAGS_OTHER})
-    target_link_libraries(${exec_name} ${ext_deps})
+    target_link_libraries(${exec_name} ${project_name}::${project_name} ${ext_deps})
     target_link_options(${exec_name} PRIVATE ${link_options})
     target_include_directories(${exec_name} PRIVATE ${CURL_INCLUDE_DIRS})
     install(TARGETS ${exec_name} DESTINATION bin)
