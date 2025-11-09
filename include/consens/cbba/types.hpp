@@ -32,8 +32,10 @@ namespace consens::cbba {
      * CBBA algorithm configuration
      */
     struct CBBAConfig {
-        // Bundle capacity
-        size_t max_bundle_size = 10;
+        // Bundle capacity (maximum tasks an agent can claim)
+        // Default 100 is reasonable for most scenarios
+        // Set to SIZE_MAX for unlimited
+        size_t max_bundle_size = 100;
 
         // Spatial filtering
         float spatial_query_radius = 100.0f; // meters

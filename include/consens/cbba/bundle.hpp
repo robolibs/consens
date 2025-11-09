@@ -3,6 +3,7 @@
 #include "types.hpp"
 
 #include <algorithm>
+#include <cstddef>
 #include <vector>
 
 namespace consens::cbba {
@@ -17,7 +18,14 @@ namespace consens::cbba {
         size_t capacity_;
 
       public:
-        explicit Bundle(size_t capacity = 10) : capacity_(capacity) { tasks_.reserve(capacity); }
+        // Default to effectively unlimited capacity (SIZE_MAX)
+        // User can set specific limits via CBBAAgent constructor
+        explicit Bundle(size_t capacity = SIZE_MAX) : capacity_(capacity) {
+            // Only reserve if capacity is reasonable
+            if (capacity < 1000) {
+                tasks_.reserve(capacity);
+            }
+        }
 
         /**
          * Add a task to the bundle
