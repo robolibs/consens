@@ -1,0 +1,9 @@
+# Acknowledgments
+
+This library implements algorithms and concepts from the following research papers:
+
+## References
+
+- Choi, H. L., Brunet, L., & How, J. P. (2009). "Consensus-Based Decentralized Auctions for Robust Task Allocation". IEEE Transactions on Robotics.
+
+- Johnson, L., et al. (2017). "Decentralized Task Allocation Using Local Information Consistency Assumptions". AIAA Journal of Aerospace Computing.
